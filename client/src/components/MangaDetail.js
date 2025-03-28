@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { mangaAPI } from '../services/api';
+import FavoriteButton from './FavoriteButton';
 
 function MangaDetail() {
   const { id } = useParams();
@@ -150,7 +151,10 @@ function MangaDetail() {
             />
           </div>
           <div className="p-6 md:w-2/3 lg:w-3/4">
-            <h1 className="text-3xl font-bold text-purple-600 mb-2">{title}</h1>
+            <div className="flex justify-between items-start">
+              <h1 className="text-3xl font-bold text-purple-600 mb-2">{title}</h1>
+              <FavoriteButton mangaId={manga.id} size="large" />
+            </div>
             
             <div className="flex flex-wrap gap-2 mb-4">
               {manga.attributes.tags.map(tag => (

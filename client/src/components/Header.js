@@ -24,6 +24,9 @@ function Header() {
             <Link to="/search" className="text-white hover:text-purple-200 transition-colors">
               Browse
             </Link>
+            <Link to="/favorites" className="text-white hover:text-purple-200 transition-colors">
+              Favorites
+            </Link>
             <Link to="/about" className="text-white hover:text-purple-200 transition-colors">
               About
             </Link>
@@ -55,6 +58,9 @@ function Header() {
             </Link>
             <Link to="/search" className="block py-2 text-white hover:text-purple-200 transition-colors">
               Browse
+            </Link>
+            <Link to="/favorites" className="block py-2 text-white hover:text-purple-200 transition-colors">
+              Favorites
             </Link>
             <Link to="/about" className="block py-2 text-white hover:text-purple-200 transition-colors">
               About

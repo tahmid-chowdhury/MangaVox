@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { mangaAPI } from '../services/api';
+import FavoriteButton from './FavoriteButton';
 
 function MangaSearch() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -123,30 +124,37 @@ function MangaSearch() {
             }
             
             return (
-              <Link to={`/manga/${manga.id}`} key={manga.id}>
-                <div className="bg-white rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
-                  <img 
-                    src={coverUrl} 
-                    alt={title}
-                    className="w-full h-64 object-cover"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = '/placeholder-manga.jpg';
-                    }}
-                  />
-                  <div className="p-4">
-                    <h3 className="font-bold text-lg mb-2 truncate">{title}</h3>
-                    <div className="flex items-center text-sm text-gray-600">
-                      <span className="bg-purple-100 text-purple-800 text-xs font-semibold rounded px-2 py-1">
-                        {manga.attributes.status || 'Unknown'}
-                      </span>
-                      {manga.attributes.year && (
-                        <span className="ml-2">{manga.attributes.year}</span>
-                      )}
+              <div key={manga.id} className="relative">
+                <Link to={`/manga/${manga.id}`}>
+                  <div className="bg-white rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
+                    <img 
+                      src={coverUrl} 
+                      alt={title}
+                      className="w-full h-64 object-cover"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = '/placeholder-manga.jpg';
+                      }}
+                    />
+                    <div className="p-4">
+                      <h3 className="font-bold text-lg mb-2 truncate">{title}</h3>
+                      <div className="flex items-center text-sm text-gray-600">
+                        <span className="bg-purple-100 text-purple-800 text-xs font-semibold rounded px-2 py-1">
+                          {manga.attributes.status || 'Unknown'}
+                        </span>
+                        {manga.attributes.year && (
+                          <span className="ml-2">{manga.attributes.year}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Link>
+                </Link>
+                <FavoriteButton 
+                  mangaId={manga.id}
+                  className="absolute top-2 right-2 bg-white rounded-full p-1 shadow-md"
+                  size="small"
+                />
+              </div>
             );
           })}
         </div>

@@ -5,6 +5,7 @@ import Header from './components/Header';
 import MangaSearch from './components/MangaSearch';
 import MangaDetail from './components/MangaDetail';
 import MangaReader from './components/MangaReader';
+import FavoritesPage from './components/FavoritesPage';
 
 function Home() {
   return (
@@ -115,6 +116,7 @@ function App() {
             <Route path="/manga/:id" element={<MangaDetail />} />
             <Route path="/reader/:mangaId/:chapterId" element={<MangaReader />} />
             <Route path="/about" element={<About />} />
+            <Route path="/favorites" element={<FavoritesPage />} />
           </Routes>
         </main>
         <footer className="bg-purple-800 text-white py-6">
