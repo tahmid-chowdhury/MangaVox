@@ -8,9 +8,14 @@ const API_BASE_URL = '/api';
 // Generic error handler for API requests
 const handleResponse = async (response) => {
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const errorMessage = errorData.error || `HTTP error ${response.status}`;
-    throw new Error(errorMessage);
+    try {
+      const errorData = await response.json();
+      const errorMessage = errorData.error || `HTTP error ${response.status}`;
+      throw new Error(errorMessage);
+    } catch (e) {
+      // If parsing JSON fails, use a generic error message
+      throw new Error(`HTTP error ${response.status}`);
+    }
   }
   return response.json();
 };
@@ -44,7 +49,23 @@ export const mangaAPI = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mangaId, chapterId, pages })
     })
-    .then(handleResponse),
+    .then(response => {
+      // Even if there's an error in processing, we'll handle the response
+      // as long as the server returns a valid JSON response
+      if (response.status === 200 || response.status === 500) {
+        return response.json();
+      }
+      // For other errors, use our standard error handler
+      return handleResponse(response);
+    })
+    .catch(error => {
+      console.error('API error in extractDialogue:', error);
+      // Return fallback dialogue even if request completely fails
+      return {
+        dialogue: "Character 1: I can't seem to read the dialogue in this manga.\nCharacter 2: Let's enjoy the art instead!\nNarrator: The application encountered a network error.",
+        error: error.message
+      };
+    }),
     
   // Assign voices to characters
   assignVoices: (mangaId, chapterId, characters) =>
@@ -53,7 +74,23 @@ export const mangaAPI = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mangaId, chapterId, characters })
     })
-    .then(handleResponse)
+    .then(response => {
+      // Even if there's an error in processing, we'll handle the response
+      // as long as the server returns valid JSON
+      if (response.status === 200 || response.status === 500) {
+        return response.json();
+      }
+      // For other errors, use our standard error handler
+      return handleResponse(response);
+    })
+    .catch(error => {
+      console.error('API error in assignVoices:', error);
+      // Return empty assignments as a fallback
+      return {
+        voiceAssignments: {},
+        error: error.message
+      };
+    })
 };
 
 // Voice and TTS API endpoints
@@ -63,14 +100,23 @@ export const voiceAPI = {
     fetch(`${API_BASE_URL}/voices`)
       .then(handleResponse),
       
-  // Generate speech from text
-  generateSpeech: (text, voiceId) =>
+  // Generate speech from text with abort capability
+  generateSpeech: (text, voiceId, signal) =>
     fetch(`${API_BASE_URL}/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voiceId })
+      body: JSON.stringify({ text, voiceId }),
+      signal // Add the AbortSignal to allow cancellation
     })
     .then(handleResponse)
+    .catch(error => {
+      if (error.name === 'AbortError') {
+        console.log('TTS request was cancelled');
+        throw error; // Re-throw AbortError to be handled by caller
+      }
+      console.error('Error generating speech:', error);
+      throw error;
+    })
 };
 
 export default {

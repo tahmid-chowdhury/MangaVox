@@ -18,8 +18,10 @@ function MangaReader() {
   const [currentAudioUrl, setCurrentAudioUrl] = useState(null);
   const [voices, setVoices] = useState([]);
   const [currentSpeech, setCurrentSpeech] = useState(null);
+  const [audioLoading, setAudioLoading] = useState(false); // New state for audio loading
   
   const audioRef = useRef(null);
+  const audioRequestRef = useRef(null); // Reference to track the current audio request
   const pageRefs = useRef([]);
   
   // Fetch manga details, chapter, and pages on load
@@ -61,23 +63,40 @@ function MangaReader() {
   // Process dialogue extraction
   const extractDialogue = async () => {
     try {
-      const dialogueData = await mangaAPI.extractDialogue(mangaId, chapterId, pages);
+      // Add loading state for dialogue
+      setDialogue({ loading: true });
+      
+      // Extract only the URLs from the page objects
+      const pageUrls = pages.map(page => page.url);
+      
+      // Send only the URLs to the server - limit to first 10 pages if too many
+      // This helps prevent payload size issues while still providing context
+      const pagesToSend = pageUrls.length > 10 ? pageUrls.slice(0, 10) : pageUrls;
+      
+      const dialogueData = await mangaAPI.extractDialogue(mangaId, chapterId, pagesToSend);
       setDialogue(dialogueData);
       
       // Once we have dialogue, assign voices to characters
       if (dialogueData && dialogueData.dialogue) {
         // Extract unique characters from the dialogue
-        // This is a simplified approach; in reality, you'd need more sophisticated parsing
         const characterDialogue = parseDialogue(dialogueData.dialogue);
         const characters = Object.keys(characterDialogue);
         
         if (characters.length > 0) {
           assignVoicesToCharacters(characters);
         }
+        
+        // Display error message if there was an API error but we got fallback dialogue
+        if (dialogueData.error) {
+          console.warn('Using fallback dialogue due to API error:', dialogueData.error);
+        }
       }
     } catch (err) {
       console.error('Error extracting dialogue:', err);
-      // Don't set error state here to avoid blocking the reader experience
+      // Set simplified fallback dialogue instead of nothing
+      setDialogue({
+        dialogue: "Character 1: I can't seem to read the dialogue in this manga.\nCharacter 2: Let's enjoy the art instead!\nNarrator: The application encountered an error processing this chapter."
+      });
     }
   };
   
@@ -111,44 +130,116 @@ function MangaReader() {
   // Assign voices to characters using the API
   const assignVoicesToCharacters = async (characters) => {
     try {
-      const response = await mangaAPI.assignVoices(mangaId, chapterId, characters);
-      setVoiceAssignments(response.voiceAssignments);
+      // Don't try to assign if no characters or if we have no voices
+      if (!characters || characters.length === 0 || voices.length === 0) {
+        console.log('No characters to assign voices to or no voices available');
+        return;
+      }
+      
+      // Limit number of characters to reduce payload size
+      const limitedCharacters = characters.length > 15 ? characters.slice(0, 15) : characters;
+      
+      const response = await mangaAPI.assignVoices(mangaId, chapterId, limitedCharacters);
+      
+      if (response.error) {
+        console.warn('Voice assignment had errors but continued with fallbacks:', response.error);
+      }
+      
+      // Only update if we actually got assignments
+      if (response.voiceAssignments && Object.keys(response.voiceAssignments).length > 0) {
+        setVoiceAssignments(response.voiceAssignments);
+      } else {
+        console.warn('No voice assignments returned, using default voices');
+        // Create simple round-robin assignments as fallback
+        const fallbackAssignments = {};
+        characters.forEach((character, index) => {
+          if (voices.length > 0) {
+            fallbackAssignments[character] = voices[index % voices.length].voice_id;
+          }
+        });
+        setVoiceAssignments(fallbackAssignments);
+      }
     } catch (err) {
       console.error('Error assigning voices:', err);
+      
+      // Create simple round-robin assignments as fallback
+      const fallbackAssignments = {};
+      characters.forEach((character, index) => {
+        if (voices.length > 0) {
+          fallbackAssignments[character] = voices[index % voices.length].voice_id;
+        }
+      });
+      setVoiceAssignments(fallbackAssignments);
     }
   };
   
   // Play speech for a dialogue
   const playSpeech = async (character, text) => {
     try {
+      // Cancel any previous ongoing audio request
+      if (audioRequestRef.current) {
+        audioRequestRef.current.abort();
+      }
+
       // Stop current audio if playing
       if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current.src = ''; // Clear source to avoid stuck loading states
       }
       
       // Get the voice ID for this character
-      const voiceId = voiceAssignments[character] || voices[0]?.voice_id;
+      const voiceId = voiceAssignments[character] || (voices.length > 0 ? voices[0].voice_id : null);
       
       if (!voiceId) {
-        console.error('No voice found for character:', character);
+        console.error('No voice found for character and no fallback voices available:', character);
         return;
       }
       
-      setIsPlaying(true);
+      setAudioLoading(true);
       setCurrentSpeech({ character, text });
       
-      // Generate speech
-      const response = await voiceAPI.generateSpeech(text, voiceId);
+      // Create an AbortController for this request
+      const controller = new AbortController();
+      audioRequestRef.current = controller;
+      
+      // Generate speech with abort capability
+      const response = await voiceAPI.generateSpeech(text, voiceId, controller.signal);
+      
+      if (!response || !response.audioUrl) {
+        throw new Error('Failed to generate audio');
+      }
+      
       setCurrentAudioUrl(response.audioUrl);
       
       // Play the audio when it's available
       if (audioRef.current) {
         audioRef.current.src = response.audioUrl;
-        await audioRef.current.play();
+        
+        // Use a promise to handle audio loading
+        const playPromise = audioRef.current.play();
+        
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              setIsPlaying(true);
+              setAudioLoading(false);
+            })
+            .catch(error => {
+              // Handle autoplay restrictions or other play errors
+              console.error('Error playing audio:', error);
+              setIsPlaying(false);
+              setAudioLoading(false);
+              setCurrentSpeech(null);
+            });
+        }
       }
     } catch (err) {
-      console.error('Error playing speech:', err);
+      // Ignore AbortError as it's intentional
+      if (err.name !== 'AbortError') {
+        console.error('Error playing speech:', err);
+      }
       setIsPlaying(false);
+      setAudioLoading(false);
       setCurrentSpeech(null);
     }
   };
@@ -158,6 +249,22 @@ function MangaReader() {
     setIsPlaying(false);
     setCurrentSpeech(null);
   };
+  
+  // Clean up on component unmount
+  useEffect(() => {
+    return () => {
+      // Cancel any pending audio request when component unmounts
+      if (audioRequestRef.current) {
+        audioRequestRef.current.abort();
+      }
+      
+      // Clean up audio element
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      }
+    };
+  }, []);
   
   // Navigate to previous/next page
   const goToPreviousPage = () => {
@@ -280,14 +387,25 @@ function MangaReader() {
         <div className="md:w-1/3 lg:w-1/4 bg-white p-4 rounded-lg shadow-lg h-min">
           <h3 className="text-lg font-bold mb-4 text-purple-600">Dialogue</h3>
           
-          {isPlaying && currentSpeech && (
+          {(isPlaying || audioLoading) && currentSpeech && (
             <div className="bg-purple-100 p-3 rounded-lg mb-4">
               <p className="font-semibold text-purple-800">{currentSpeech.character}</p>
               <p className="italic">"{currentSpeech.text}"</p>
+              {audioLoading && (
+                <div className="flex items-center mt-2">
+                  <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                  <span className="text-xs text-purple-800">Loading audio...</span>
+                </div>
+              )}
             </div>
           )}
           
-          {dialogue && dialogue.dialogue ? (
+          {dialogue && dialogue.loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500 mr-2"></div>
+              <p className="text-gray-500">Extracting dialogue...</p>
+            </div>
+          ) : dialogue && dialogue.dialogue ? (
             <div>
               {/* Display simplified dialogue */}
               {Object.entries(parseDialogue(dialogue.dialogue)).map(([character, speeches], idx) => (
@@ -306,13 +424,20 @@ function MangaReader() {
                       <p className="text-sm">{speech}</p>
                       <button
                         onClick={() => playSpeech(character, speech)}
-                        className="text-xs text-purple-600 hover:text-purple-800 mt-1 flex items-center"
-                        disabled={isPlaying}
+                        className={`text-xs ${
+                          isPlaying || audioLoading
+                            ? 'text-gray-400 cursor-not-allowed'
+                            : 'text-purple-600 hover:text-purple-800'
+                        } mt-1 flex items-center`}
+                        disabled={isPlaying || audioLoading}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                         </svg>
-                        Play
+                        {audioLoading && character === currentSpeech?.character && speech === currentSpeech?.text
+                          ? 'Loading...'
+                          : 'Play'
+                        }
                       </button>
                     </div>
                   ))}
@@ -330,6 +455,12 @@ function MangaReader() {
         ref={audioRef}
         src={currentAudioUrl}
         onEnded={handleAudioEnded}
+        onError={(e) => {
+          console.error('Audio element error:', e);
+          setIsPlaying(false);
+          setAudioLoading(false);
+          setCurrentSpeech(null);
+        }}
         className="hidden"
       />
     </div>

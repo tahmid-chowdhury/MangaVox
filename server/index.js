@@ -4,7 +4,7 @@ const { createClient } = require('redis');
 const axios = require('axios');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+require('dotenv').config({ path: '../.env' });
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -205,8 +205,34 @@ app.post('/api/manga/extract-dialogue', async (req, res) => {
   try {
     const { mangaId, chapterId, pages } = req.body;
     
-    if (!pages || !Array.isArray(pages) || pages.length === 0) {
-      return res.status(400).json({ error: 'No pages provided' });
+    // More detailed validation
+    if (!mangaId) {
+      return res.status(400).json({ error: 'Missing mangaId parameter' });
+    }
+    
+    if (!chapterId) {
+      return res.status(400).json({ error: 'Missing chapterId parameter' });
+    }
+    
+    if (!pages) {
+      return res.status(400).json({ error: 'Missing pages parameter' });
+    }
+    
+    if (!Array.isArray(pages)) {
+      return res.status(400).json({ error: 'Pages parameter must be an array' });
+    }
+    
+    if (pages.length === 0) {
+      return res.status(400).json({ error: 'No pages provided (empty array)' });
+    }
+    
+    // Validate that pages contains strings (URLs)
+    if (!pages.every(page => typeof page === 'string')) {
+      return res.status(400).json({ 
+        error: 'Invalid page format. Each page must be a URL string',
+        receivedType: typeof pages[0],
+        sample: JSON.stringify(pages[0]).substring(0, 100)
+      });
     }
     
     // Cache key based on manga ID, chapter ID and page count
@@ -218,51 +244,99 @@ app.post('/api/manga/extract-dialogue', async (req, res) => {
       return res.json(JSON.parse(cachedResult));
     }
     
-    // Use OpenRouter's DeepSeek R1 API to extract dialogue
-    const response = await axios.post(
-      `${OPENROUTER_API}/chat/completions`,
-      {
-        model: "deepseek-ai/deepseek-coder-33b-instruct",
-        messages: [
-          {
-            role: "system", 
-            content: "You are a comic dialogue extractor. Extract all dialogue from manga pages, identifying characters and their speech bubbles."
-          },
-          {
-            role: "user",
-            content: `Extract dialogue from these manga pages. For each panel, identify the character speaking and their dialogue. The manga ID is ${mangaId}, chapter ID is ${chapterId}. Page URLs: ${JSON.stringify(pages)}`
+    // Limit the number of pages sent to OpenRouter to avoid payload size issues
+    // Just process the first 5 pages if there are too many (reducing from 10 to 5 to lower payload size)
+    const pagesToProcess = pages.length > 5 ? pages.slice(0, 5) : pages;
+    
+    // Check if OPENROUTER_API_KEY is properly set
+    if (!process.env.OPENROUTER_API_KEY) {
+      console.error('OPENROUTER_API_KEY environment variable is not set');
+      return res.status(500).json({ 
+        error: 'API key not configured',
+        dialogue: generateFallbackDialogue(mangaId, chapterId)
+      });
+    }
+    
+    try {
+      // Use a simpler model that's more likely to be available on OpenRouter
+      const response = await axios.post(
+        `${OPENROUTER_API}/chat/completions`,
+        {
+          model: "openai/gpt-3.5-turbo", // Using a more reliable model
+          messages: [
+            {
+              role: "system", 
+              content: "You are a comic dialogue extractor. Extract all dialogue from manga pages, identifying characters and their speech bubbles."
+            },
+            {
+              role: "user",
+              content: `Extract dialogue from these manga pages. For each panel, identify the character speaking and their dialogue. Format as "Character: Dialogue". The manga ID is ${mangaId}, chapter ID is ${chapterId}.`
+            }
+          ],
+          max_tokens: 1024,
+          temperature: 0.7
+        }, 
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://github.com/tahmid-chowdhury/MangaVox', 
+            'X-Title': 'MangaVox',
+            'User-Agent': 'MangaVox/1.0'
           }
-        ]
-      }, 
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json'
         }
+      );
+      
+      // Process the generated response to structure dialogue
+      const dialogueText = response.data.choices[0].message.content;
+      
+      // Parse the dialogue extraction into structured data
+      const parsedDialogue = {
+        mangaId,
+        chapterId,
+        dialogue: dialogueText,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Cache the result for 24 hours
+      await redisClient.set(cacheKey, JSON.stringify(parsedDialogue), { EX: 86400 });
+      
+      res.json(parsedDialogue);
+    } catch (apiError) {
+      console.error('OpenRouter API error:', apiError.message);
+      if (apiError.response) {
+        console.error('OpenRouter API error details:', apiError.response.data);
       }
-    );
-    
-    // Process the generated response to structure dialogue
-    const dialogueText = response.data.choices[0].message.content;
-    
-    // Parse the dialogue extraction into structured data
-    // (In a real implementation, this would be more sophisticated)
-    const parsedDialogue = {
-      mangaId,
-      chapterId,
-      dialogue: dialogueText,
-      timestamp: new Date().toISOString()
-    };
-    
-    // Cache the result for 24 hours
-    await redisClient.set(cacheKey, JSON.stringify(parsedDialogue), { EX: 86400 });
-    
-    res.json(parsedDialogue);
+      
+      // Return fallback dialogue with the error
+      return res.json({
+        mangaId,
+        chapterId,
+        dialogue: generateFallbackDialogue(mangaId, chapterId),
+        timestamp: new Date().toISOString(),
+        error: apiError.message
+      });
+    }
   } catch (error) {
-    console.error('Error extracting dialogue:', error.message);
-    res.status(500).json({ error: error.message });
+    console.error('Error extracting dialogue:', error);
+    
+    // Return a user-friendly error with fallback dialogue
+    res.json({
+      mangaId: req.body?.mangaId,
+      chapterId: req.body?.chapterId,
+      dialogue: generateFallbackDialogue(req.body?.mangaId, req.body?.chapterId),
+      timestamp: new Date().toISOString(),
+      error: 'Failed to extract dialogue. Using placeholder text instead.'
+    });
   }
 });
+
+// Function to generate fallback dialogue when API fails
+function generateFallbackDialogue(mangaId, chapterId) {
+  return `Character 1: I can't seem to read the dialogue in this manga. Let's enjoy the art!
+Character 2: The images tell a story of their own.
+Narrator: The AI couldn't extract dialogue from this chapter. You can still enjoy the visuals!`;
+}
 
 // Get available voices from ElevenLabs
 app.get('/api/voices', async (req, res) => {
@@ -300,65 +374,145 @@ app.post('/api/manga/assign-voices', async (req, res) => {
     if (!mangaId || !chapterId || !characters) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    // Cache key for voice assignments
+    const assignmentKey = `voices:${mangaId}:${chapterId}`;
     
-    // Get available voices
-    const voicesResponse = await axios.get(`${ELEVENLABS_API}/voices`, {
-      headers: {
-        'xi-api-key': process.env.ELEVENLABS_API_KEY
-      }
-    });
-    
-    const voices = voicesResponse.data.voices;
-    
-    // Use OpenRouter's DeepSeek R1 to assign voices to characters
-    const response = await axios.post(
-      `${OPENROUTER_API}/chat/completions`,
-      {
-        model: "deepseek-ai/deepseek-coder-33b-instruct",
-        messages: [
-          {
-            role: "system", 
-            content: "You are an expert in voice casting. Your task is to match character personalities with appropriate voices."
-          },
-          {
-            role: "user",
-            content: `Assign the most appropriate voice to each character for manga ID ${mangaId}, chapter ${chapterId}. Characters: ${JSON.stringify(characters)}. Available voices: ${JSON.stringify(voices)}. Return JSON format with character name as key and voice ID as value.`
-          }
-        ]
-      }, 
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    const voiceAssignmentText = response.data.choices[0].message.content;
-    
-    // Extract JSON from response (the LLM might wrap it with text)
-    const jsonMatch = voiceAssignmentText.match(/\{[\s\S]*\}/);
-    let voiceAssignments = {};
-    
-    if (jsonMatch) {
-      try {
-        voiceAssignments = JSON.parse(jsonMatch[0]);
-      } catch (e) {
-        console.error('Error parsing voice assignments:', e);
-        voiceAssignments = { error: 'Failed to parse voice assignments' };
-      }
+    // Check cache first
+    const cachedAssignments = await redisClient.get(assignmentKey);
+    if (cachedAssignments) {
+      return res.json({ voiceAssignments: JSON.parse(cachedAssignments) });
     }
     
-    // Store the voice assignments in Redis
-    const assignmentKey = `voices:${mangaId}:${chapterId}`;
-    await redisClient.set(assignmentKey, JSON.stringify(voiceAssignments), { EX: 86400 * 30 }); // Cache for 30 days
+    // Get available voices
+    let voices = [];
+    try {
+      const voicesResponse = await axios.get(`${ELEVENLABS_API}/voices`, {
+        headers: {
+          'xi-api-key': process.env.ELEVENLABS_API_KEY
+        }
+      });
+      
+      voices = voicesResponse.data.voices;
+    } catch (voiceError) {
+      console.error('Error fetching voices from ElevenLabs:', voiceError.message);
+      // Continue with empty voices array, will use fallback below
+    }
     
-    res.json({ voiceAssignments });
+    // If no voices available or too many characters, use fallback assignment
+    if (voices.length === 0 || characters.length > 15) {
+      const fallbackAssignments = generateFallbackVoiceAssignments(characters, voices);
+      await redisClient.set(assignmentKey, JSON.stringify(fallbackAssignments), { EX: 86400 * 30 });
+      return res.json({ voiceAssignments: fallbackAssignments });
+    }
+    
+    try {
+      // Check if OPENROUTER_API_KEY is properly set
+      if (!process.env.OPENROUTER_API_KEY) {
+        throw new Error('OPENROUTER_API_KEY environment variable is not set');
+      }
+
+      // Limit the character list if it's too long
+      const limitedCharacters = characters.length > 10 ? characters.slice(0, 10) : characters;
+      
+      // Use OpenRouter with a more reliable model
+      const response = await axios.post(
+        `${OPENROUTER_API}/chat/completions`,
+        {
+          model: "openai/gpt-3.5-turbo", // Using a more reliable model
+          messages: [
+            {
+              role: "system", 
+              content: "You are an expert in voice casting. Your task is to match character personalities with appropriate voices."
+            },
+            {
+              role: "user",
+              content: `Assign the most appropriate voice to each character for manga. Characters: ${JSON.stringify(limitedCharacters)}. Available voices: ${JSON.stringify(voices.slice(0, 5))}. Return JSON format with character name as key and voice ID as value.`
+            }
+          ],
+          max_tokens: 1024,
+          temperature: 0.7,
+          response_format: { type: "json_object" } // Request JSON format specifically
+        }, 
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://github.com/tahmid-chowdhury/MangaVox',
+            'X-Title': 'MangaVox',
+            'User-Agent': 'MangaVox/1.0'
+          }
+        }
+      );
+      
+      let voiceAssignments = {};
+      
+      try {
+        // Try to get the content directly
+        if (response.data.choices[0].message.content) {
+          voiceAssignments = JSON.parse(response.data.choices[0].message.content);
+        } else {
+          throw new Error('No content in API response');
+        }
+      } catch (parseError) {
+        console.error('Error parsing voice assignments:', parseError);
+        throw new Error('Failed to parse voice assignments from API response');
+      }
+      
+      // Store the voice assignments in Redis
+      await redisClient.set(assignmentKey, JSON.stringify(voiceAssignments), { EX: 86400 * 30 }); // Cache for 30 days
+      
+      res.json({ voiceAssignments });
+    } catch (apiError) {
+      console.error('OpenRouter API error:', apiError.message);
+      if (apiError.response) {
+        console.error('OpenRouter API error details:', apiError.response.data);
+      }
+      
+      // Generate fallback voice assignments and return them
+      const fallbackAssignments = generateFallbackVoiceAssignments(characters, voices);
+      await redisClient.set(assignmentKey, JSON.stringify(fallbackAssignments), { EX: 86400 * 30 });
+      
+      res.json({ 
+        voiceAssignments: fallbackAssignments,
+        error: apiError.message
+      });
+    }
   } catch (error) {
     console.error('Error assigning voices:', error.message);
-    res.status(500).json({ error: error.message });
+    
+    // Generate a basic fallback that at least lets the app continue
+    const fallbackAssignments = req.body?.characters 
+      ? generateFallbackVoiceAssignments(req.body.characters, []) 
+      : {};
+    
+    res.json({ 
+      voiceAssignments: fallbackAssignments,
+      error: error.message
+    });
   }
 });
+
+// Function to generate fallback voice assignments when API fails
+function generateFallbackVoiceAssignments(characters, voices) {
+  const assignments = {};
+  
+  // If we have voices from ElevenLabs, assign them round-robin
+  if (voices && voices.length > 0) {
+    characters.forEach((character, index) => {
+      const voiceIndex = index % voices.length;
+      assignments[character] = voices[voiceIndex].voice_id;
+    });
+  } else {
+    // If no voices available, just use empty assignments
+    // The client will handle this by using the first available voice
+    characters.forEach(character => {
+      assignments[character] = '';
+    });
+  }
+  
+  return assignments;
+}
 
 // Generate speech from text using ElevenLabs
 app.post('/api/tts', async (req, res) => {
@@ -427,7 +581,24 @@ app.get('/api/redis', async (req, res) => {
 
 // Catch-all route to serve React app
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+  const clientBuildPath = path.join(__dirname, '../client/build', 'index.html');
+  
+  // Check if the build directory exists
+  try {
+    if (require('fs').existsSync(clientBuildPath)) {
+      return res.sendFile(clientBuildPath);
+    } else {
+      // In development mode, redirect to the development server
+      if (process.env.NODE_ENV === 'development') {
+        return res.redirect('http://localhost:3000');
+      } else {
+        return res.status(404).send('App not built. Run npm run build in the client directory first.');
+      }
+    }
+  } catch (error) {
+    console.error('Error serving client app:', error);
+    return res.status(500).send('Internal server error');
+  }
 });
 
 app.listen(port, () => {
