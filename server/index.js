@@ -65,7 +65,27 @@ async function getMangaDexToken() {
 app.get('/api/manga/search', async (req, res) => {
   try {
     const { query, limit = 20, offset = 0 } = req.query;
-    const cacheKey = `manga:search:${query}:${limit}:${offset}`;
+    
+    // Create params object for MangaDex API
+    const params = {
+      limit,
+      offset,
+      includes: ['cover_art', 'author', 'artist'],
+      contentRating: ['safe', 'suggestive', 'erotica'],
+    };
+    
+    // Add title param only if query is provided
+    if (query) {
+      params.title = query;
+      params.order = { relevance: 'desc' };
+    } 
+    // If no query, order by followedCount (popular manga)
+    else {
+      params.order = { followedCount: 'desc' };
+    }
+    
+    // Create cache key based on all parameters
+    const cacheKey = `manga:search:${query || 'popular'}:${limit}:${offset}`;
     
     // Check cache first
     const cachedResult = await redisClient.get(cacheKey);
@@ -74,16 +94,7 @@ app.get('/api/manga/search', async (req, res) => {
     }
     
     // If not in cache, fetch from MangaDex
-    const response = await axios.get(`${MANGADEX_API}/manga`, {
-      params: {
-        title: query,
-        limit,
-        offset,
-        includes: ['cover_art', 'author', 'artist'],
-        contentRating: ['safe', 'suggestive', 'erotica'],
-        order: { relevance: 'desc' }
-      }
-    });
+    const response = await axios.get(`${MANGADEX_API}/manga`, { params });
     
     // Cache the result for 1 hour
     await redisClient.set(cacheKey, JSON.stringify(response.data), { EX: 3600 });
@@ -262,7 +273,7 @@ app.post('/api/manga/extract-dialogue', async (req, res) => {
       const response = await axios.post(
         `${OPENROUTER_API}/chat/completions`,
         {
-          model: "openai/gpt-3.5-turbo", // Using a more reliable model
+          model: "deepseek/deepseek-r1-zero:free", // Using DeepSeek R1 Zero model
           messages: [
             {
               role: "system", 
@@ -419,7 +430,7 @@ app.post('/api/manga/assign-voices', async (req, res) => {
       const response = await axios.post(
         `${OPENROUTER_API}/chat/completions`,
         {
-          model: "openai/gpt-3.5-turbo", // Using a more reliable model
+          model: "deepseek/deepseek-r1-zero:free", // Using DeepSeek R1 Zero model
           messages: [
             {
               role: "system", 

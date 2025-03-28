@@ -27,6 +27,11 @@ export const mangaAPI = {
     fetch(`${API_BASE_URL}/manga/search?query=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`)
       .then(handleResponse),
       
+  // Get popular manga
+  getPopular: (limit = 20, offset = 0) =>
+    fetch(`${API_BASE_URL}/manga/search?limit=${limit}&offset=${offset}&order[followedCount]=desc`)
+      .then(handleResponse),
+      
   // Get manga details by ID
   getDetails: (mangaId) =>
     fetch(`${API_BASE_URL}/manga/${mangaId}`)
