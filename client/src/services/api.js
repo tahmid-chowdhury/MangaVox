@@ -37,10 +37,63 @@ export const mangaAPI = {
     fetch(`${API_BASE_URL}/manga/${mangaId}`)
       .then(handleResponse),
   
-  // Get manga chapters
+  // Get manga chapters (single page)
   getChapters: (mangaId, language = 'en', limit = 100, offset = 0) =>
     fetch(`${API_BASE_URL}/manga/${mangaId}/chapters?translatedLanguage=${language}&limit=${limit}&offset=${offset}`)
       .then(handleResponse),
+  
+  // Get ALL manga chapters (handles pagination automatically)
+  getAllChapters: async (mangaId, language = 'en') => {
+    try {
+      let allChapters = [];
+      let hasMore = true;
+      let offset = 0;
+      const limit = 100; // API limit per request
+      let totalChapters = 0;
+      
+      // Show progress in console
+      console.log('Starting to fetch all chapters...');
+      
+      // Fetch chapters until there are no more
+      while (hasMore) {
+        const response = await fetch(`${API_BASE_URL}/manga/${mangaId}/chapters?translatedLanguage=${language}&limit=${limit}&offset=${offset}`)
+          .then(handleResponse);
+        
+        if (!response || !response.data) {
+          throw new Error('Invalid response from API');
+        }
+        
+        // Add fetched chapters to our collection
+        allChapters = [...allChapters, ...response.data];
+        
+        // Get total for logging purposes if this is the first request
+        if (offset === 0) {
+          totalChapters = response.total;
+          console.log(`Found ${totalChapters} total chapters.`);
+        }
+        
+        console.log(`Fetched ${allChapters.length}/${totalChapters} chapters`);
+        
+        // Check if we need to fetch more chapters
+        offset += limit;
+        hasMore = response.total > offset && response.data.length === limit;
+      }
+      
+      console.log(`Finished fetching all ${allChapters.length} chapters.`);
+      
+      // Return in the same format as the original API response
+      return {
+        result: 'ok',
+        data: allChapters,
+        limit: allChapters.length,
+        offset: 0,
+        total: allChapters.length
+      };
+    } catch (error) {
+      console.error('Error fetching all chapters:', error);
+      throw error;
+    }
+  },
       
   // Get chapter pages
   getChapterPages: (chapterId) =>

@@ -11,6 +11,8 @@ function MangaDetail() {
   const [error, setError] = useState(null);
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [availableLanguages, setAvailableLanguages] = useState([]);
+  const [chaptersLoading, setChaptersLoading] = useState(false);
+  const [chaptersProgress, setChaptersProgress] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -53,7 +55,16 @@ function MangaDetail() {
   
   const fetchChapters = async (mangaId, language) => {
     try {
-      const chaptersData = await mangaAPI.getChapters(mangaId, language);
+      setChaptersLoading(true);
+      setChaptersProgress(0);
+      
+      // Subscribe to progress updates - we'll implement this with a simple state update
+      const updateProgress = (progress) => {
+        setChaptersProgress(progress);
+      };
+      
+      // Use the new method that handles pagination
+      const chaptersData = await mangaAPI.getAllChapters(mangaId, language);
       
       // Sort chapters by volume and chapter number
       const sortedChapters = chaptersData.data.sort((a, b) => {
@@ -69,8 +80,10 @@ function MangaDetail() {
       });
       
       setChapters(sortedChapters);
+      setChaptersLoading(false);
     } catch (err) {
       console.error('Error fetching chapters:', err);
+      setChaptersLoading(false);
     }
   };
 
@@ -221,7 +234,12 @@ function MangaDetail() {
           )}
         </div>
         
-        {chapters.length === 0 ? (
+        {chaptersLoading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading chapters... This may take a moment.</p>
+          </div>
+        ) : chapters.length === 0 ? (
           <p className="text-gray-500">No chapters available in this language.</p>
         ) : (
           Object.keys(chaptersByVolume).sort((a, b) => {
