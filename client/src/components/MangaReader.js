@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { mangaAPI, voiceAPI } from '../services/api';
+import { useUserPreferences } from '../contexts/UserPreferencesContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { markChapterAsRead } from '../utils/favorites';
+import { updateReadingProgress } from '../utils/readingProgress';
+import BookmarkButton from './BookmarkButton';
 
 function MangaReader() {
   const { mangaId, chapterId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { readingMode, toggleReadingMode } = useUserPreferences();
+  const { darkMode } = useTheme();
   
   const [manga, setManga] = useState(null);
   const [chapter, setChapter] = useState(null);
@@ -60,6 +68,22 @@ function MangaReader() {
     }
   }, [pages]);
   
+  // Parse page index from query parameters
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const page = parseInt(searchParams.get('page'));
+    if (!isNaN(page) && page >= 0 && page < pages.length) {
+      setCurrentPageIndex(page);
+    }
+  }, [location.search, pages.length]);
+
+  // Update reading progress when page changes
+  useEffect(() => {
+    if (pages.length > 0) {
+      updateReadingProgress(mangaId, chapterId, currentPageIndex, pages.length);
+    }
+  }, [mangaId, chapterId, currentPageIndex, pages.length]);
+
   // Process dialogue extraction
   const extractDialogue = async () => {
     try {
@@ -295,9 +319,21 @@ function MangaReader() {
     };
   }, [currentPageIndex, pages.length]);
 
+  // Mark chapter as read when loaded
+  useEffect(() => {
+    if (chapter && manga) {
+      const chapterInfo = {
+        number: chapter.attributes?.chapter,
+        title: chapter.attributes?.title,
+        attributes: chapter.attributes
+      };
+      markChapterAsRead(mangaId, chapterId, chapterInfo);
+    }
+  }, [chapter, manga, mangaId, chapterId]);
+  
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
+      <div className="flex items-center justify-center h-screen">
         <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-purple-500"></div>
       </div>
     );
@@ -329,63 +365,105 @@ function MangaReader() {
   const currentPage = pages[currentPageIndex];
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-purple-600">{title}</h2>
-        <p className="text-gray-600">
-          Chapter {chapter?.attributes?.chapter || 'Unknown'}: {chapter?.attributes?.title || 'Untitled'}
-        </p>
+    <div className="container mx-auto p-4 dark:bg-gray-900 dark:text-white transition-colors duration-200">
+      <div className="mb-6 flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-primary-600 dark:text-primary-400">{title}</h2>
+          <p className="text-gray-600 dark:text-gray-300">
+            Chapter {chapter?.attributes?.chapter || 'Unknown'}: {chapter?.attributes?.title || 'Untitled'}
+          </p>
+        </div>
+        
+        <div className="flex items-center space-x-3">
+          {/* Add BookmarkButton */}
+          <BookmarkButton 
+            mangaId={mangaId}
+            chapterId={chapterId}
+            pageIndex={currentPageIndex}
+            size="normal"
+          />
+          
+          {/* Reading Mode Toggle */}
+          <button 
+            onClick={toggleReadingMode}
+            className="bg-primary-600 hover:bg-primary-700 dark:bg-primary-800 dark:hover:bg-primary-700 text-white px-3 py-1 rounded-md text-sm transition-colors"
+          >
+            {readingMode === 'page' ? 'Switch to Long Strip' : 'Switch to Page View'}
+          </button>
+        </div>
       </div>
 
-      {/* Page Navigation */}
-      <div className="flex justify-between mb-4">
-        <button
-          onClick={goToPreviousPage}
-          disabled={currentPageIndex === 0}
-          className={`px-4 py-2 rounded-lg ${
-            currentPageIndex === 0 
-              ? 'bg-gray-300 cursor-not-allowed' 
-              : 'bg-purple-600 hover:bg-purple-700 text-white'
-          }`}
-        >
-          Previous
-        </button>
-        <span className="self-center">
-          Page {currentPageIndex + 1} of {pages.length}
-        </span>
-        <button
-          onClick={goToNextPage}
-          disabled={currentPageIndex === pages.length - 1}
-          className={`px-4 py-2 rounded-lg ${
-            currentPageIndex === pages.length - 1 
-              ? 'bg-gray-300 cursor-not-allowed' 
-              : 'bg-purple-600 hover:bg-purple-700 text-white'
-          }`}
-        >
-          Next
-        </button>
-      </div>
+      {/* Only show page navigation in page mode */}
+      {readingMode === 'page' && (
+        <div className="flex justify-between mb-4">
+          <button
+            onClick={goToPreviousPage}
+            disabled={currentPageIndex === 0}
+            className={`px-4 py-2 rounded-lg ${
+              currentPageIndex === 0 
+                ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' 
+                : 'bg-primary-600 hover:bg-primary-700 dark:bg-primary-800 dark:hover:bg-primary-700 text-white'
+            } transition-colors`}
+          >
+            Previous
+          </button>
+          <span className="self-center dark:text-gray-300">
+            Page {currentPageIndex + 1} of {pages.length}
+          </span>
+          <button
+            onClick={goToNextPage}
+            disabled={currentPageIndex === pages.length - 1}
+            className={`px-4 py-2 rounded-lg ${
+              currentPageIndex === pages.length - 1 
+                ? 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed' 
+                : 'bg-primary-600 hover:bg-primary-700 dark:bg-primary-800 dark:hover:bg-primary-700 text-white'
+            } transition-colors`}
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row gap-4">
         {/* Manga Page Display */}
-        <div className="flex-1 bg-gray-100 rounded-lg overflow-hidden shadow-lg">
-          {currentPage && (
-            <img
-              src={currentPage.url}
-              alt={`Page ${currentPageIndex + 1}`}
-              className="w-full h-auto"
-              ref={el => pageRefs.current[currentPageIndex] = el}
-              onError={(e) => {
-                e.target.onerror = null;
-                e.target.src = '/placeholder-page.jpg';
-              }}
-            />
+        <div className="flex-1 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden shadow-lg">
+          {readingMode === 'page' ? (
+            // Page mode - show current page only
+            currentPage && (
+              <img
+                src={currentPage.url}
+                alt={`Page ${currentPageIndex + 1}`}
+                className="w-full h-auto"
+                ref={el => pageRefs.current[currentPageIndex] = el}
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src = '/placeholder-page.jpg';
+                }}
+              />
+            )
+          ) : (
+            // Long strip mode - show all pages
+            <div className="flex flex-col space-y-4 pb-4">
+              {pages.map((page, index) => (
+                <img
+                  key={index}
+                  src={page.url}
+                  alt={`Page ${index + 1}`}
+                  className="w-full h-auto"
+                  ref={el => pageRefs.current[index] = el}
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = '/placeholder-page.jpg';
+                  }}
+                />
+              ))}
+            </div>
           )}
         </div>
-        
+
         {/* Dialogue Panel */}
-        <div className="md:w-1/3 lg:w-1/4 bg-white p-4 rounded-lg shadow-lg h-min">
-          <h3 className="text-lg font-bold mb-4 text-purple-600">Dialogue</h3>
+        <div className="md:w-1/3 lg:w-1/4 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg h-min">
+          <h3 className="text-lg font-bold mb-4 text-primary-600 dark:text-primary-400">Dialogue</h3>
           
           {(isPlaying || audioLoading) && currentSpeech && (
             <div className="bg-purple-100 p-3 rounded-lg mb-4">
@@ -406,7 +484,7 @@ function MangaReader() {
               <p className="text-gray-500">Extracting dialogue...</p>
             </div>
           ) : dialogue && dialogue.dialogue ? (
-            <div>
+            <div className="flex flex-col space-y-4 pb-4">
               {/* Display simplified dialogue */}
               {Object.entries(parseDialogue(dialogue.dialogue)).map(([character, speeches], idx) => (
                 <div key={idx} className="mb-4">
