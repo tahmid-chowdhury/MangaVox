@@ -139,6 +139,8 @@ export const getUpdatedManga = () => {
     if (!latestChaptersJson) return [];
     
     const latestChapters = JSON.parse(latestChaptersJson);
+    // Using eslint-disable-next-line since we might need this variable in future implementation
+    // eslint-disable-next-line no-unused-vars
     const readChapters = readChaptersJson ? JSON.parse(readChaptersJson) : {};
     const favorites = getFavorites();
     

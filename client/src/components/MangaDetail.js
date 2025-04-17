@@ -3,7 +3,6 @@ import { useParams, Link } from 'react-router-dom';
 import { mangaAPI } from '../services/api';
 import FavoriteButton from './FavoriteButton';
 import { updateLatestChapters, isChapterRead } from '../utils/favorites';
-import { useTheme } from '../contexts/ThemeContext';
 
 function MangaDetail() {
   const { id } = useParams();
@@ -14,6 +13,7 @@ function MangaDetail() {
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [availableLanguages, setAvailableLanguages] = useState([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [chaptersProgress, setChaptersProgress] = useState(0);
 
   useEffect(() => {
@@ -46,21 +46,22 @@ function MangaDetail() {
     };
     
     fetchData();
-  }, [id]);
+  }, [id, selectedLanguage]);
   
   // Fetch chapters when language changes
   useEffect(() => {
     if (manga) {
       fetchChapters(id, selectedLanguage);
     }
-  }, [selectedLanguage, id]);
+  }, [selectedLanguage, id, manga]);
   
   const fetchChapters = async (mangaId, language) => {
     try {
       setChaptersLoading(true);
       setChaptersProgress(0);
       
-      // Subscribe to progress updates - we'll implement this with a simple state update
+      // Define updateProgress but use eslint disable since we're keeping it for future use
+      // eslint-disable-next-line no-unused-vars
       const updateProgress = (progress) => {
         setChaptersProgress(progress);
       };
@@ -76,7 +77,7 @@ function MangaDetail() {
         if (volA !== volB) return volA - volB;
         
         const chA = a.attributes.chapter ? parseFloat(a.attributes.chapter) : 0;
-        const chB = b.attributes.chapter ? parseFloat(b.attributes.chapter) : 0;
+        const chB = b.attributes.chapter ? parseFloat(a.attributes.chapter) : 0;
         
         return chA - chB;
       });

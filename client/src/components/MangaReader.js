@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { mangaAPI, voiceAPI } from '../services/api';
 import { useUserPreferences } from '../contexts/UserPreferencesContext';
@@ -12,7 +12,7 @@ function MangaReader() {
   const navigate = useNavigate();
   const location = useLocation();
   const { readingMode, toggleReadingMode } = useUserPreferences();
-  const { darkMode } = useTheme();
+  const theme = useTheme();
   
   const [manga, setManga] = useState(null);
   const [chapter, setChapter] = useState(null);
@@ -26,10 +26,10 @@ function MangaReader() {
   const [currentAudioUrl, setCurrentAudioUrl] = useState(null);
   const [voices, setVoices] = useState([]);
   const [currentSpeech, setCurrentSpeech] = useState(null);
-  const [audioLoading, setAudioLoading] = useState(false); // New state for audio loading
+  const [audioLoading, setAudioLoading] = useState(false);
   
   const audioRef = useRef(null);
-  const audioRequestRef = useRef(null); // Reference to track the current audio request
+  const audioRequestRef = useRef(null);
   const pageRefs = useRef([]);
   
   // Fetch manga details, chapter, and pages on load
@@ -61,31 +61,8 @@ function MangaReader() {
     fetchData();
   }, [mangaId, chapterId]);
 
-  // Extract dialogue when pages are loaded
-  useEffect(() => {
-    if (pages.length > 0) {
-      extractDialogue();
-    }
-  }, [pages]);
-  
-  // Parse page index from query parameters
-  useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
-    const page = parseInt(searchParams.get('page'));
-    if (!isNaN(page) && page >= 0 && page < pages.length) {
-      setCurrentPageIndex(page);
-    }
-  }, [location.search, pages.length]);
-
-  // Update reading progress when page changes
-  useEffect(() => {
-    if (pages.length > 0) {
-      updateReadingProgress(mangaId, chapterId, currentPageIndex, pages.length);
-    }
-  }, [mangaId, chapterId, currentPageIndex, pages.length]);
-
-  // Process dialogue extraction
-  const extractDialogue = async () => {
+  // Define extractDialogue as a useCallback to use it as a dependency
+  const extractDialogue = useCallback(async () => {
     try {
       // Add loading state for dialogue
       setDialogue({ loading: true });
@@ -122,8 +99,31 @@ function MangaReader() {
         dialogue: "Character 1: I can't seem to read the dialogue in this manga.\nCharacter 2: Let's enjoy the art instead!\nNarrator: The application encountered an error processing this chapter."
       });
     }
-  };
+  }, [mangaId, chapterId, pages]);
+
+  // Extract dialogue when pages are loaded
+  useEffect(() => {
+    if (pages.length > 0) {
+      extractDialogue();
+    }
+  }, [pages, extractDialogue]);
   
+  // Parse page index from query parameters
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const page = parseInt(searchParams.get('page'));
+    if (!isNaN(page) && page >= 0 && page < pages.length) {
+      setCurrentPageIndex(page);
+    }
+  }, [location.search, pages.length]);
+
+  // Update reading progress when page changes
+  useEffect(() => {
+    if (pages.length > 0) {
+      updateReadingProgress(mangaId, chapterId, currentPageIndex, pages.length);
+    }
+  }, [mangaId, chapterId, currentPageIndex, pages.length]);
+
   // Parse dialogue from LLM response
   const parseDialogue = (dialogueText) => {
     // This is a simplified parser
@@ -274,7 +274,7 @@ function MangaReader() {
     setCurrentSpeech(null);
   };
   
-  // Clean up on component unmount
+  // Clean up on component unmount - properly handling the ref
   useEffect(() => {
     return () => {
       // Cancel any pending audio request when component unmounts
@@ -282,26 +282,29 @@ function MangaReader() {
         audioRequestRef.current.abort();
       }
       
+      // Store current audioRef in a variable to avoid the stale closure issue
+      const currentAudioRef = audioRef.current;
+      
       // Clean up audio element
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = '';
+      if (currentAudioRef) {
+        currentAudioRef.pause();
+        currentAudioRef.src = '';
       }
     };
   }, []);
   
-  // Navigate to previous/next page
-  const goToPreviousPage = () => {
+  // Define navigation functions as callbacks to use them as dependencies
+  const goToPreviousPage = useCallback(() => {
     if (currentPageIndex > 0) {
       setCurrentPageIndex(currentPageIndex - 1);
     }
-  };
+  }, [currentPageIndex]);
   
-  const goToNextPage = () => {
+  const goToNextPage = useCallback(() => {
     if (currentPageIndex < pages.length - 1) {
       setCurrentPageIndex(currentPageIndex + 1);
     }
-  };
+  }, [currentPageIndex, pages.length]);
   
   // Handle key presses for navigation
   useEffect(() => {
@@ -317,7 +320,7 @@ function MangaReader() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentPageIndex, pages.length]);
+  }, [goToPreviousPage, goToNextPage]);
 
   // Mark chapter as read when loaded
   useEffect(() => {

@@ -21,7 +21,7 @@ const handleResponse = async (response) => {
 };
 
 // Manga API endpoints
-export const mangaAPI = {
+const mangaAPI = {
   // Search for manga by title
   search: (query, limit = 20, offset = 0) => 
     fetch(`${API_BASE_URL}/manga/search?query=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`)
@@ -152,7 +152,7 @@ export const mangaAPI = {
 };
 
 // Voice and TTS API endpoints
-export const voiceAPI = {
+const voiceAPI = {
   // Get available voices
   getVoices: () =>
     fetch(`${API_BASE_URL}/voices`)
@@ -177,7 +177,4 @@ export const voiceAPI = {
     })
 };
 
-export default {
-  manga: mangaAPI,
-  voice: voiceAPI
-};
+export { mangaAPI, voiceAPI };
