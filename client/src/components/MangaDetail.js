@@ -279,7 +279,7 @@ function MangaDetail() {
                   
                   return (
                     <Link 
-                      to={`/reader/${manga.id}/${chapter.id}`} 
+                      to={`/manga/${manga.id}/chapter/${chapter.id}`} 
                       key={chapter.id}
                       className={`flex items-center p-3 border rounded transition-colors
                         ${isRead 

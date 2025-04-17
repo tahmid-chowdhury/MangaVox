@@ -177,4 +177,112 @@ const voiceAPI = {
     })
 };
 
-export { mangaAPI, voiceAPI };
+// Advanced dialogue processing API
+const dialogueAPI = {
+  // Map character names and identities for consistency
+  mapCharacters: (dialogue, context = null) =>
+    fetch(`${API_BASE_URL}/dialogue/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        dialogue, 
+        task: 'character-mapping',
+        context
+      })
+    })
+    .then(handleResponse)
+    .catch(error => {
+      console.error('Error mapping characters:', error);
+      throw error;
+    }),
+  
+  // Analyze sentiment and emotions in dialogue
+  analyzeSentiment: (dialogue, context = null) =>
+    fetch(`${API_BASE_URL}/dialogue/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        dialogue, 
+        task: 'sentiment-analysis',
+        context
+      })
+    })
+    .then(handleResponse)
+    .catch(error => {
+      console.error('Error analyzing sentiment:', error);
+      throw error;
+    }),
+  
+  // Generate character profiles from dialogue
+  generateCharacterProfiles: (dialogue, context = null) =>
+    fetch(`${API_BASE_URL}/dialogue/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        dialogue, 
+        task: 'character-profile',
+        context
+      })
+    })
+    .then(handleResponse)
+    .catch(error => {
+      console.error('Error generating character profiles:', error);
+      throw error;
+    }),
+  
+  // Translate dialogue to another language
+  translate: (dialogue, targetLanguage, sourceLanguage = 'auto', context = null) =>
+    fetch(`${API_BASE_URL}/dialogue/translate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        dialogue, 
+        targetLanguage,
+        sourceLanguage,
+        context
+      })
+    })
+    .then(handleResponse)
+    .catch(error => {
+      console.error('Error translating dialogue:', error);
+      throw error;
+    }),
+  
+  // Apply multiple enhancements to dialogue in a single call
+  enhance: (dialogue, mangaId = null, chapterId = null, enhancements = ['character-consistency']) =>
+    fetch(`${API_BASE_URL}/dialogue/enhance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        dialogue,
+        mangaId,
+        chapterId,
+        enhancements
+      })
+    })
+    .then(handleResponse)
+    .catch(error => {
+      console.error('Error enhancing dialogue:', error);
+      throw error;
+    }),
+  
+  // Process page-level dialogues with character and position mapping
+  processPageDialogues: (mangaId, chapterId, pageNumber, pageUrl) =>
+    fetch(`${API_BASE_URL}/page/dialogues`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        mangaId,
+        chapterId,
+        pageNumber,
+        pageUrl
+      })
+    })
+    .then(handleResponse)
+    .catch(error => {
+      console.error('Error processing page dialogues:', error);
+      throw error;
+    })
+};
+
+export { mangaAPI, voiceAPI, dialogueAPI };
