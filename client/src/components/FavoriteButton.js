@@ -4,7 +4,7 @@ import { isFavorite, toggleFavorite } from '../utils/favorites';
 /**
  * Button component for toggling manga favorite status
  */
-function FavoriteButton({ mangaId, className = "", size = "normal" }) {
+function FavoriteButton({ mangaId, className = "", size = "normal", onToggle }) {
   const [isFav, setIsFav] = useState(false);
   
   // Load initial favorite status
@@ -20,6 +20,11 @@ function FavoriteButton({ mangaId, className = "", size = "normal" }) {
     
     const newStatus = toggleFavorite(mangaId);
     setIsFav(newStatus);
+    
+    // Call the onToggle callback if provided
+    if (onToggle) {
+      onToggle(newStatus);
+    }
   };
   
   // Determine icon size classes
@@ -30,7 +35,7 @@ function FavoriteButton({ mangaId, className = "", size = "normal" }) {
   return (
     <button 
       onClick={handleToggleFavorite}
-      className={`text-purple-600 hover:text-purple-800 ${className}`}
+      className={`text-primary-600 hover:text-primary-800 dark:text-primary-500 dark:hover:text-primary-400 ${className}`}
       aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
       title={isFav ? "Remove from favorites" : "Add to favorites"}
     >

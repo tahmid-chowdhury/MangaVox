@@ -67,8 +67,8 @@ function MangaSearch() {
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-2xl font-bold mb-6 text-purple-600">Find Your Manga</h2>
+    <div className="container mx-auto p-4 dark:bg-gray-900 transition-colors duration-200">
+      <h2 className="text-2xl font-bold mb-6 text-primary-600 dark:text-primary-400">Find Your Manga</h2>
       
       <form onSubmit={handleSubmit} className="mb-8">
         <div className="flex items-center">
@@ -76,13 +76,13 @@ function MangaSearch() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 p-3 border-2 border-purple-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+            className="flex-1 p-3 border-2 border-primary-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent"
             placeholder="Search manga titles..."
             required
           />
           <button 
             type="submit" 
-            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-purple-600 focus:ring-opacity-50"
+            className="bg-primary-600 hover:bg-primary-700 dark:bg-primary-700 dark:hover:bg-primary-600 text-white font-bold py-3 px-6 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-opacity-50"
             disabled={loading}
           >
             {loading ? 'Searching...' : 'Search'}
@@ -91,19 +91,19 @@ function MangaSearch() {
       </form>
 
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400 px-4 py-3 rounded mb-4">
           Error: {error}
         </div>
       )}
 
       {/* Display appropriate heading based on search state */}
-      <h3 className="text-xl font-semibold mb-4 text-purple-700">
+      <h3 className="text-xl font-semibold mb-4 text-primary-700 dark:text-primary-400">
         {searchQuery ? 'Search Results' : 'Popular Manga'}
       </h3>
 
       {initialLoading ? (
         <div className="flex justify-center items-center py-20">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-purple-500"></div>
+          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-primary-500"></div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -126,7 +126,7 @@ function MangaSearch() {
             return (
               <div key={manga.id} className="relative">
                 <Link to={`/manga/${manga.id}`}>
-                  <div className="bg-white rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
                     <img 
                       src={coverUrl} 
                       alt={title}
@@ -137,9 +137,9 @@ function MangaSearch() {
                       }}
                     />
                     <div className="p-4">
-                      <h3 className="font-bold text-lg mb-2 truncate">{title}</h3>
-                      <div className="flex items-center text-sm text-gray-600">
-                        <span className="bg-purple-100 text-purple-800 text-xs font-semibold rounded px-2 py-1">
+                      <h3 className="font-bold text-lg mb-2 truncate dark:text-gray-100">{title}</h3>
+                      <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                        <span className="bg-primary-100 text-primary-800 dark:bg-primary-900/30 dark:text-primary-300 text-xs font-semibold rounded px-2 py-1">
                           {manga.attributes.status || 'Unknown'}
                         </span>
                         {manga.attributes.year && (
@@ -151,7 +151,7 @@ function MangaSearch() {
                 </Link>
                 <FavoriteButton 
                   mangaId={manga.id}
-                  className="absolute top-2 right-2 bg-white rounded-full p-1 shadow-md"
+                  className="absolute top-2 right-2 bg-white dark:bg-gray-800 rounded-full p-1 shadow-md"
                   size="small"
                 />
               </div>
@@ -164,7 +164,7 @@ function MangaSearch() {
         <div className="text-center mt-8">
           <button 
             onClick={loadMore} 
-            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 focus:ring-opacity-50"
+            className="bg-primary-600 hover:bg-primary-700 dark:bg-primary-700 dark:hover:bg-primary-600 text-white font-bold py-2 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-opacity-50"
             disabled={loading}
           >
             {loading ? 'Loading...' : 'Load More'}
@@ -173,13 +173,13 @@ function MangaSearch() {
       )}
 
       {searchQuery && searchResults.length === 0 && !loading && (
-        <div className="text-center text-gray-600 py-8">
+        <div className="text-center text-gray-600 dark:text-gray-400 py-8">
           No results found for "{searchQuery}".
         </div>
       )}
 
       {!searchQuery && popularManga.length === 0 && !initialLoading && (
-        <div className="text-center text-gray-600 py-8">
+        <div className="text-center text-gray-600 dark:text-gray-400 py-8">
           No popular manga available. Please try searching instead.
         </div>
       )}

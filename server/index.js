@@ -4,10 +4,135 @@ const { createClient } = require('redis');
 const axios = require('axios');
 const cors = require('cors');
 const path = require('path');
+const http = require('http');
+const WebSocket = require('ws');
 require('dotenv').config({ path: '../.env' });
+
+// Replace any util._extend usage with Object.assign
+const util = require('util');
+if (util._extend) {
+  util._extend = Object.assign;
+}
 
 const app = express();
 const port = process.env.PORT || 5000;
+
+// Create HTTP server
+const server = http.createServer(app);
+
+// Create WebSocket server with a specific path to match client
+const wss = new WebSocket.Server({ 
+  server,
+  path: '/websocket', // Match the client path
+  clientTracking: true,
+});
+
+// Track connected clients
+const clients = new Set();
+let pingInterval = null;
+
+// WebSocket connection handler
+wss.on('connection', (ws, req) => {
+  const ip = req.socket.remoteAddress;
+  console.log(`WebSocket client connected from ${ip}`);
+  
+  // Add this client to our set
+  clients.add(ws);
+  
+  // Set up alive flag
+  ws.isAlive = true;
+  
+  // Handle pong responses from client
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
+  
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      console.log('Received message:', data);
+      
+      // Handle different message types here
+      if (data.type === 'heartbeat') {
+        ws.send(JSON.stringify({ 
+          type: 'heartbeat', 
+          timestamp: new Date().toISOString() 
+        }));
+      }
+      
+      // Add more message handlers as needed
+    } catch (e) {
+      console.error('Error processing message:', e);
+    }
+  });
+  
+  ws.on('close', (code, reason) => {
+    console.log(`WebSocket client disconnected: ${code} - ${reason}`);
+    clients.delete(ws);
+  });
+  
+  ws.on('error', (err) => {
+    console.error('WebSocket error:', err);
+    clients.delete(ws);
+  });
+  
+  // Send a welcome message
+  ws.send(JSON.stringify({ 
+    type: 'connection', 
+    status: 'connected',
+    message: 'Connected to MangaVox WebSocket server',
+    timestamp: new Date().toISOString() 
+  }));
+});
+
+// Setup ping interval when server starts
+function setupPingInterval() {
+  // Clear any existing interval
+  if (pingInterval) {
+    clearInterval(pingInterval);
+  }
+  
+  // Ping all clients every 15 seconds to keep connections alive
+  pingInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if (ws.isAlive === false) {
+        console.log('Terminating inactive WebSocket connection');
+        return ws.terminate();
+      }
+      
+      ws.isAlive = false;
+      try {
+        ws.ping();
+      } catch (e) {
+        console.error('Error pinging client:', e);
+        ws.terminate();
+      }
+    });
+  }, 15000);
+}
+
+// Start the ping interval
+setupPingInterval();
+
+// Clean up interval on server shutdown
+process.on('SIGINT', () => {
+  console.log('Shutting down WebSocket server');
+  if (pingInterval) {
+    clearInterval(pingInterval);
+  }
+  wss.close();
+  process.exit(0);
+});
+
+// Broadcast message to all connected clients
+function broadcast(data) {
+  const message = JSON.stringify(data);
+  clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+}
 
 // Middleware
 app.use(express.json());
@@ -148,14 +273,15 @@ app.get('/api/manga/:id/chapters', async (req, res) => {
       return res.json(JSON.parse(cachedResult));
     }
     
-    // If not in cache, fetch from MangaDex
+    // If not in cache, fetch from MangaDex with timeout
     const response = await axios.get(`${MANGADEX_API}/manga/${id}/feed`, {
       params: {
         translatedLanguage: [translatedLanguage],
         limit,
         offset,
         order: { volume: 'asc', chapter: 'asc' }
-      }
+      },
+      timeout: 15000 // 15 second timeout
     });
     
     // Cache the result for 1 hour
@@ -164,7 +290,10 @@ app.get('/api/manga/:id/chapters', async (req, res) => {
     res.json(response.data);
   } catch (error) {
     console.error('Error getting manga chapters:', error.message);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      error: error.message,
+      message: "Failed to fetch chapters. Please try again later."
+    });
   }
 });
 
@@ -273,7 +402,7 @@ app.post('/api/manga/extract-dialogue', async (req, res) => {
       const response = await axios.post(
         `${OPENROUTER_API}/chat/completions`,
         {
-          model: "deepseek/deepseek-r1-zero:free", // Using DeepSeek R1 Zero model
+          model: "google/gemini-2.5-pro-exp-03-25:free", // Updated to Google Gemini model
           messages: [
             {
               role: "system", 
@@ -294,9 +423,16 @@ app.post('/api/manga/extract-dialogue', async (req, res) => {
             'HTTP-Referer': 'https://github.com/tahmid-chowdhury/MangaVox', 
             'X-Title': 'MangaVox',
             'User-Agent': 'MangaVox/1.0'
-          }
+          },
+          timeout: 30000 // 30 second timeout
         }
       );
+      
+      // Check if response contains expected data, otherwise fallback gracefully
+      if (!response.data || !response.data.choices || !response.data.choices[0] || !response.data.choices[0].message) {
+        console.error('Invalid OpenRouter response structure:', JSON.stringify(response.data));
+        throw new Error('Invalid API response structure');
+      }
       
       // Process the generated response to structure dialogue
       const dialogueText = response.data.choices[0].message.content;
@@ -430,7 +566,7 @@ app.post('/api/manga/assign-voices', async (req, res) => {
       const response = await axios.post(
         `${OPENROUTER_API}/chat/completions`,
         {
-          model: "deepseek/deepseek-r1-zero:free", // Using DeepSeek R1 Zero model
+          model: "google/gemini-2.5-pro-exp-03-25:free", // Updated to Google Gemini model
           messages: [
             {
               role: "system", 
@@ -579,6 +715,38 @@ app.post('/api/tts', async (req, res) => {
   }
 });
 
+// Theme change endpoint that broadcasts to all clients
+app.post('/api/theme/change', async (req, res) => {
+  try {
+    const { theme } = req.body;
+    
+    if (!theme) {
+      return res.status(400).json({ error: 'Theme is required' });
+    }
+    
+    // Validate theme
+    const validThemes = ['purple', 'blue', 'green', 'red', 'orange'];
+    if (!validThemes.includes(theme)) {
+      return res.status(400).json({ error: 'Invalid theme. Must be one of: ' + validThemes.join(', ') });
+    }
+    
+    // Store the current theme in Redis so new connections can get it
+    await redisClient.set('app:current_theme', theme, { EX: 2592000 }); // 30 days
+    
+    // Broadcast theme change to all connected clients
+    broadcast({
+      type: 'theme_change',
+      theme,
+      timestamp: new Date().toISOString()
+    });
+    
+    res.json({ success: true, theme });
+  } catch (error) {
+    console.error('Error changing theme:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Example route to set and get a value from Redis
 app.get('/api/redis', async (req, res) => {
   try {
@@ -588,6 +756,11 @@ app.get('/api/redis', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// Check if the server is running and responding to heartbeat
+app.get('/api/heartbeat', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Catch-all route to serve React app
@@ -612,6 +785,6 @@ app.get('*', (req, res) => {
   }
 });
 
-app.listen(port, () => {
+server.listen(port, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${port}`);
 });

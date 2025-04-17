@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { mangaAPI } from '../services/api';
 import FavoriteButton from './FavoriteButton';
+import { updateLatestChapters, isChapterRead } from '../utils/favorites';
+import { useTheme } from '../contexts/ThemeContext';
 
 function MangaDetail() {
   const { id } = useParams();
@@ -87,6 +89,23 @@ function MangaDetail() {
     }
   };
 
+  // Update latest chapters when chapters are loaded
+  useEffect(() => {
+    if (chapters.length > 0) {
+      // Format chapters correctly for storage
+      const formattedChapters = chapters.map(chapter => ({
+        id: chapter.id,
+        attributes: {
+          chapter: chapter.attributes.chapter,
+          title: chapter.attributes.title,
+          publishAt: chapter.attributes.publishAt
+        }
+      }));
+      
+      updateLatestChapters(id, formattedChapters);
+    }
+  }, [chapters, id]);
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -149,7 +168,7 @@ function MangaDetail() {
   }, {});
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container mx-auto p-4 dark:bg-gray-900 transition-colors duration-200">
       <div className="bg-white rounded-lg shadow-lg overflow-hidden mb-8">
         <div className="md:flex">
           <div className="md:w-1/3 lg:w-1/4">
@@ -211,7 +230,7 @@ function MangaDetail() {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 transition-colors duration-200">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-purple-600">Chapters</h2>
           
@@ -249,34 +268,43 @@ function MangaDetail() {
             return parseFloat(a) - parseFloat(b);
           }).map(volume => (
             <div key={volume} className="mb-6">
-              <h3 className="text-lg font-semibold mb-3 border-b pb-2">
+              <h3 className="text-lg font-semibold mb-3 border-b pb-2 dark:border-gray-700 dark:text-gray-300 transition-colors duration-200">
                 {volume === 'No Volume' ? 'Chapters' : `Volume ${volume}`}
               </h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {chaptersByVolume[volume].map(chapter => (
-                  <Link 
-                    to={`/reader/${manga.id}/${chapter.id}`} 
-                    key={chapter.id}
-                    className="flex items-center p-3 border rounded hover:bg-purple-50 transition-colors"
-                  >
-                    <div className="flex-1">
-                      <span className="font-medium">
-                        Ch. {chapter.attributes.chapter || 'N/A'}
-                      </span>
-                      {chapter.attributes.title && (
-                        <p className="text-sm text-gray-600 truncate">
-                          {chapter.attributes.title}
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-purple-600">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  </Link>
-                ))}
+                {chaptersByVolume[volume].map(chapter => {
+                  const isRead = isChapterRead(manga.id, chapter.id);
+                  
+                  return (
+                    <Link 
+                      to={`/reader/${manga.id}/${chapter.id}`} 
+                      key={chapter.id}
+                      className={`flex items-center p-3 border rounded transition-colors
+                        ${isRead 
+                          ? 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600' 
+                          : 'hover:bg-purple-50 dark:hover:bg-purple-900/20 border-gray-300 dark:border-gray-600'}
+                        dark:text-gray-300`}
+                    >
+                      <div className="flex-1">
+                        <span className={`font-medium ${!isRead ? 'text-purple-600 dark:text-purple-400' : ''}`}>
+                          Ch. {chapter.attributes.chapter || 'N/A'}
+                          {!isRead && <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 px-2 py-0.5 rounded">New</span>}
+                        </span>
+                        {chapter.attributes.title && (
+                          <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                            {chapter.attributes.title}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-purple-600 dark:text-purple-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           ))
